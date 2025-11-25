@@ -1,11 +1,11 @@
 """
-main.py — FastAPI-сервис генерации блог-постов на основе актуальных новостей.
+app.py — FastAPI-сервис генерации блог-постов на основе актуальных новостей.
 
 Функциональность:
 - Получение свежих новостей по теме через Currents API
-- Генерация заголовка, meta description и статьи через OpenAI API
+- Генерация заголовка, meta description и статьи через OpenAI ChatCompletion API
 - Обработка ошибок и проверка переменных окружения
-- Health endpoints для мониторинга состояния сервиса
+- Health endpoints для мониторинга
 - Запуск через uvicorn
 """
 
@@ -16,10 +16,10 @@ from typing import Optional
 import requests
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
-from openai import OpenAI
+import openai  # старый стиль библиотеки
 
 # =========================
-#   НАСТРОЙКА ЛОГГИРОВАНИЯ
+#   ЛОГГИРОВАНИЕ
 # =========================
 
 logging.basicConfig(
@@ -47,14 +47,13 @@ if not CURRENTS_API_KEY:
         "Задайте её перед запуском сервиса."
     )
 
+# Инициализируем ключ для старого клиента openai
+openai.api_key = OPENAI_API_KEY
+
 # =========================
-#   ИНИЦИАЛИЗАЦИЯ КЛИЕНТОВ
+#   ИНИЦИАЛИЗАЦИЯ FASTAPI
 # =========================
 
-# Инициализируем OpenAI-клиент
-client = OpenAI(api_key=OPENAI_API_KEY)
-
-# Инициализируем FastAPI-приложение
 app = FastAPI(
     title="Blog Post Generator",
     description="Сервис генерации блог-постов на основе актуальных новостей (Currents API + OpenAI).",
@@ -92,7 +91,7 @@ class HealthResponse(BaseModel):
 
 
 # =========================
-#   ФУНКЦИЯ ПОЛУЧЕНИЯ НОВОСТЕЙ
+#   ПОЛУЧЕНИЕ НОВОСТЕЙ ИЗ CURRENTS API
 # =========================
 
 
@@ -157,7 +156,7 @@ def get_recent_news(topic: str, language: str = "en", limit: int = 5) -> str:
 
 
 # =========================
-#   ФУНКЦИЯ ГЕНЕРАЦИИ КОНТЕНТА
+#   ГЕНЕРАЦИЯ КОНТЕНТА ЧЕРЕЗ OPENAI
 # =========================
 
 
@@ -175,8 +174,8 @@ def generate_content(topic: str) -> GeneratedPostResponse:
     try:
         # 2. Генерация заголовка статьи
         logger.info(f"Запрос к OpenAI для генерации заголовка по теме '{topic}'.")
-        title_completion = client.chat.completions.create(
-            model="gpt-4.1-mini",  # при желании можно заменить на другую модель
+        title_completion = openai.ChatCompletion.create(
+            model="gpt-4o-mini",  # можно заменить на gpt-4.1-mini, если доступен
             messages=[
                 {
                     "role": "user",
@@ -192,12 +191,12 @@ def generate_content(topic: str) -> GeneratedPostResponse:
             max_tokens=60,
             temperature=0.5,
         )
-        title = title_completion.choices[0].message.content.strip()
+        title = title_completion.choices[0].message["content"].strip()
 
         # 3. Генерация meta-описания
         logger.info("Запрос к OpenAI для генерации meta-описания.")
-        meta_completion = client.chat.completions.create(
-            model="gpt-4.1-mini",
+        meta_completion = openai.ChatCompletion.create(
+            model="gpt-4o-mini",
             messages=[
                 {
                     "role": "user",
@@ -212,12 +211,12 @@ def generate_content(topic: str) -> GeneratedPostResponse:
             max_tokens=120,
             temperature=0.5,
         )
-        meta_description = meta_completion.choices[0].message.content.strip()
+        meta_description = meta_completion.choices[0].message["content"].strip()
 
         # 4. Генерация полного текста статьи
         logger.info("Запрос к OpenAI для генерации полного текста статьи.")
-        post_completion = client.chat.completions.create(
-            model="gpt-4.1-mini",
+        post_completion = openai.ChatCompletion.create(
+            model="gpt-4o-mini",
             messages=[
                 {
                     "role": "user",
@@ -243,7 +242,7 @@ def generate_content(topic: str) -> GeneratedPostResponse:
             presence_penalty=0.6,
             frequency_penalty=0.6,
         )
-        post_content = post_completion.choices[0].message.content.strip()
+        post_content = post_completion.choices[0].message["content"].strip()
 
         return GeneratedPostResponse(
             title=title,
@@ -253,7 +252,7 @@ def generate_content(topic: str) -> GeneratedPostResponse:
         )
 
     except HTTPException:
-        # Если внутри уже был брошен HTTPException (например, в get_recent_news) — просто пробрасываем его дальше
+        # Если внутри уже был брошен HTTPException (например, в get_recent_news) — просто прокидываем дальше
         raise
     except Exception as e:
         logger.exception(f"Неожиданная ошибка при генерации контента: {e}")
@@ -337,9 +336,8 @@ async def health_check():
 if __name__ == "__main__":
     import uvicorn
 
-    # Порт можно задавать через переменную окружения PORT (например, для деплоя на Render / Railway)
     port = int(os.getenv("PORT", 8000))
 
-    # Важно: "main:app" — это <имя_файла>:<имя_объекта_app>.
-    # Если файл будет называться иначе (например, app.py), поменяйте строку на "app:app".
-    uvicorn.run("main:app", host="0.0.0.0", port=port)
+    # Важно: файл называется app.py — указываем "app:app"
+    uvicorn.run("app:app", host="0.0.0.0", port=port)
+
