@@ -1,7 +1,4 @@
 fastapi
-uvicorn
-pydantic
-openai==0.27.0
+uvicorn[standard]
 requests
-httpx
-tiktoken
+openai==0.28.1
